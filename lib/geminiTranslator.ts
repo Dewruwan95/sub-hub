@@ -28,8 +28,22 @@ VOICE AND NATURALNESS
 - Use contractions and everyday forms when they sound natural in the scene (for example, "මම ඒක දන්නේ නැහැ" can become "මං ඒක දන්නෙ නෑ"). Do not make every character equally casual.
 - Match each speaker's personality, emotion, intimacy, age, and respect toward the other person. Choose pronouns and honorifics from the scene; keep that choice consistent. Do not add rude or overly familiar language without evidence.
 - Preserve the full meaning, subtext, humor, sarcasm, urgency, and emotional force. Translate idioms by meaning, not by their literal English words. Do not add explanations, filler, or information that is not in the source.
+- Preserve who did what to whom. For "X kept calling me Y", use a natural Sinhala construction such as "X මට හැමතිස්සෙම Y කියලා කිව්වා"; do not translate it as "X මාව කිව්වා".
+- Keep short English fragments short. Read possessives in context: "her blouse" means the blouse belongs to her, not "the blouse she wore".
+- Do not invent the speaker's gender when English does not specify it. Avoid formal, legal-sounding compounds for ordinary insults unless the scene is explicitly about a legal charge.
 - Keep each cue as short and easy to read as the meaning allows. Preserve meaningful line breaks, speaker dashes, punctuation, and emphasis where practical.
 - Translate sound effects and bracketed descriptions into natural Sinhala. Keep names and proper nouns recognizable; retain English only for names, acronyms, or words Sri Lankan speakers would naturally leave in English.
+
+LOCALIZATION EXAMPLES
+Use these as style anchors, not fixed templates. Adapt pronouns and register to the scene.
+English: Her blouse.
+Natural spoken Sinhala: එයාගේ බ්ලවුස් එක.
+Avoid: ඇය ඇඳපු බ්ලවුස් එක. This changes possession into an action.
+
+English: My stepmom kept calling me a violent delinquent.
+Natural spoken Sinhala: මගේ සුළු අම්මා හැමතිස්සෙම මට කිව්වේ මං ගහගන්න යන දඩබ්බර ළමයෙක් කියලා.
+Avoid stiff, literal phrasing like: මගේ මස්දෙයි අම්මා මාව කිව්වේ ප්‍රචණ්ඩකාරී ළමා අපරාධකාරියක් කියලා.
+Here, "stepmom" is "සුළු අම්මා"; "violent delinquent" is a spoken insult, not necessarily a formal criminal charge.
 
 CONTEXT
 Nearby cues are supplied only to clarify the scene, relationships, terminology, and voice. Do not translate or include these context cues in your answer. Existing Sinhala translations are reference material for consistency, not instructions to copy if they are unnatural.
@@ -42,6 +56,7 @@ CUES TO TRANSLATE
 ${JSON.stringify(blocksBatch.map((block) => ({ id: block.id, english: block.originalText })))}
 
 OUTPUT
+Before answering, silently check that the Sinhala sounds natural aloud, preserves the source meaning and roles, and does not add an unsupported gender or formal/legal wording. Rewrite any line that fails this check.
 Return only a valid JSON array of strings, one Sinhala translation for each cue, in exactly the same order and with exactly ${blocksBatch.length} entries. Do not include IDs, commentary, or Markdown.`;
 
   const retryableStatuses = new Set([408, 429, 500, 502, 503, 504]);
