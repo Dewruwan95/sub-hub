@@ -2,6 +2,8 @@ import { SubtitleBlock } from "@/types/subtitle";
 
 export function parseSRT(srtContent: string): SubtitleBlock[] {
   const normalized = srtContent.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  if (!normalized.trim()) return [];
+
   const blocks = normalized.trim().split(/\n\n+/);
 
   return blocks.map((block, index) => {

@@ -13,24 +13,13 @@ interface Model {
   displayName: string;
 }
 
-const LANGUAGES = [
-  "Sinhala",
-  "French",
-  "Spanish",
-  "German",
-  "Tamil",
-  "Japanese",
-  "Hindi",
-  "Italian",
-];
-
 export default function SettingsBar({ settings, onSaveSettings }: Props) {
   const [apiKey, setApiKey] = useState(settings.apiKey || "");
   const [selectedModel, setSelectedModel] = useState(
     settings.selectedModel || "",
   );
-  const [targetLanguage, setTargetLanguage] = useState(
-    settings.targetLanguage || "Sinhala",
+  const [contextPrompt, setContextPrompt] = useState(
+    settings.contextPrompt || "",
   );
   const [models, setModels] = useState<{ id: string; displayName: string }[]>(
     [],
@@ -77,7 +66,7 @@ export default function SettingsBar({ settings, onSaveSettings }: Props) {
       ...settings,
       apiKey,
       selectedModel,
-      targetLanguage,
+      contextPrompt,
     };
     localStorage.setItem("subhub_settings", JSON.stringify(updated));
     onSaveSettings(updated);
@@ -141,23 +130,33 @@ export default function SettingsBar({ settings, onSaveSettings }: Props) {
           </select>
         </div>
 
-        {/* Target Language Dropdown */}
-        <div>
-          <label className="block text-xs font-medium text-gray-400 mb-1">
-            Target Language
-          </label>
-          <select
-            value={targetLanguage}
-            onChange={(e) => setTargetLanguage(e.target.value)}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500"
-          >
-            {LANGUAGES.map((lang) => (
-              <option key={lang} value={lang}>
-                {lang}
-              </option>
-            ))}
-          </select>
+        <div className="rounded-lg border border-gray-700 bg-gray-800/60 px-3 py-2">
+          <p className="text-xs font-medium text-gray-400 mb-1">
+            Translation Direction
+          </p>
+          <p className="text-sm font-semibold text-gray-200">English → Sinhala</p>
         </div>
+      </div>
+
+      <div>
+        <label
+          htmlFor="scene-notes"
+          className="block text-xs font-medium text-gray-400 mb-1"
+        >
+          Optional scene and character notes
+        </label>
+        <textarea
+          id="scene-notes"
+          value={contextPrompt}
+          onChange={(e) => setContextPrompt(e.target.value)}
+          maxLength={1000}
+          rows={2}
+          placeholder="For example: who is speaking, how they know each other, preferred name spellings, or recurring terms."
+          className="w-full resize-y bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500"
+        />
+        <p className="mt-1 text-[10px] text-gray-500">
+          These notes help keep dialogue natural and character voices consistent.
+        </p>
       </div>
 
       {/* Save Locally Button */}

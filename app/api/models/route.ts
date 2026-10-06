@@ -10,7 +10,7 @@ export async function POST(req: Request) {
   try {
     const { apiKey } = await req.json();
 
-    if (!apiKey) {
+    if (typeof apiKey !== "string" || !apiKey.trim()) {
       return NextResponse.json(
         { error: "API Key is required" },
         { status: 400 },
@@ -19,7 +19,8 @@ export async function POST(req: Request) {
 
     // Call Google AI Studio Models List REST API
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
+      "https://generativelanguage.googleapis.com/v1beta/models",
+      { headers: { "x-goog-api-key": apiKey } },
     );
 
     if (!response.ok) {

@@ -13,6 +13,12 @@ import { toast } from "sonner";
 // Inter-batch pause helper
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const normalizeBatchSize = (value: unknown): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 20;
+  return Math.min(100, Math.max(5, Math.floor(parsed)));
+};
+
 export default function Dashboard() {
   const router = useRouter();
   const { status } = useSession();
@@ -22,7 +28,6 @@ export default function Dashboard() {
     const defaultSettings: AppSettings = {
       apiKey: "",
       selectedModel: "gemini-3.5-flash-lite",
-      targetLanguage: "Sinhala",
       batchSize: 20,
       interBatchDelay: 1500, // Default 1.5 seconds delay
       contextPrompt: "",
@@ -33,7 +38,15 @@ export default function Dashboard() {
         const saved = localStorage.getItem("subhub_settings");
         if (saved) {
           const parsed = JSON.parse(saved);
-          return { ...defaultSettings, ...parsed };
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            // Drop targetLanguage from older settings; this app is English → Sinhala only.
+            delete parsed.targetLanguage;
+            return {
+              ...defaultSettings,
+              ...parsed,
+              batchSize: normalizeBatchSize(parsed.batchSize),
+            };
+          }
         }
       } catch (error) {
         console.error("Failed to parse settings:", error);
@@ -112,8 +125,11 @@ export default function Dashboard() {
         .map((block, idx) => (!block.translatedText?.trim() ? idx : -1))
         .filter((idx) => idx !== -1);
 
-      const batchSize = settings.batchSize || 20;
-      const interBatchDelayMs = settings.interBatchDelay ?? 1500;
+      const batchSize = normalizeBatchSize(settings.batchSize);
+      const interBatchDelayMs = Math.min(
+        10000,
+        Math.max(500, Number(settings.interBatchDelay) || 1500),
+      );
 
       // 🚀 2. Translate නොවූ Blocks පමණක් Batch කර යැවීම
       for (let i = 0; i < untranslatedIndices.length; i += batchSize) {
@@ -121,11 +137,22 @@ export default function Dashboard() {
         const currentBatchBlocks = currentBatchIndices.map(
           (idx) => updatedBlocks[idx],
         );
+        const firstBatchIndex = currentBatchIndices[0];
+        const lastBatchIndex =
+          currentBatchIndices[currentBatchIndices.length - 1];
+        const contextIndices = [
+          firstBatchIndex - 2,
+          firstBatchIndex - 1,
+          lastBatchIndex + 1,
+          lastBatchIndex + 2,
+        ].filter((idx) => idx >= 0 && idx < updatedBlocks.length);
+        const contextBlocks = contextIndices.map((idx) => updatedBlocks[idx]);
 
         try {
           const translatedTexts = await translateBatchWithRetry(
             currentBatchBlocks,
             settings,
+            contextBlocks,
           );
 
           // Translate වූ පෙළ නිවැරදි Block Index එකට සිතියම්ගත (Map) කිරීම
@@ -150,7 +177,7 @@ export default function Dashboard() {
             b.translatedText?.trim(),
           ).length;
           toast.error("Translation Paused", {
-            description: `Stopped due to error. Saved ${currentDone}/${totalBlocks} blocks. Click 'Resume Translation' to continue.`,
+            description: `Stopped due to error. Saved ${currentDone}/${totalBlocks} blocks. ${error instanceof Error ? error.message : "Please try again."}`,
           });
 
           break; // Stop loop on error
@@ -191,7 +218,7 @@ export default function Dashboard() {
             SubHub 🎬
           </h1>
           <p className="text-xs text-gray-400">
-            Next-Gen Gemini AI Subtitle Translator & Studio
+            Conversational English → Sinhala subtitle translation
           </p>
         </div>
       </header>
@@ -232,7 +259,7 @@ export default function Dashboard() {
               onChange={(e) =>
                 setSettings({
                   ...settings,
-                  batchSize: parseInt(e.target.value) || 20,
+                  batchSize: normalizeBatchSize(e.target.value),
                 })
               }
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none"
