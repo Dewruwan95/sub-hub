@@ -61,7 +61,7 @@ ${JSON.stringify(blocksBatch.map((b) => b.originalText))}`;
             contents: [{ parts: [{ text: promptText }] }],
             generationConfig: {
               responseMimeType: "application/json",
-              temperature: 0.2,
+              temperature: 0.3,
             },
           }),
         },
