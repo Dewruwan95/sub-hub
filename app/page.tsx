@@ -10,17 +10,21 @@ import SettingsBar from "@/components/SettingsBar";
 import SubtitleEditor from "@/components/SubtitleEditor";
 import { toast } from "sonner";
 
+// Inter-batch pause helper
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export default function Dashboard() {
   const router = useRouter();
-  const { status } = useSession(); // NextAuth Session Status
+  const { status } = useSession();
 
-  // Load Saved Local Storage Settings directly in useState initializer
+  // Load Saved Local Storage Settings
   const [settings, setSettings] = useState<AppSettings>(() => {
     const defaultSettings: AppSettings = {
       apiKey: "",
-      selectedModel: "gemini-3.7-flash",
+      selectedModel: "gemini-3.5-flash-lite",
       targetLanguage: "Sinhala",
       batchSize: 20,
+      interBatchDelay: 1500, // Default 1.5 seconds delay
       contextPrompt: "",
     };
 
@@ -28,7 +32,8 @@ export default function Dashboard() {
       try {
         const saved = localStorage.getItem("subhub_settings");
         if (saved) {
-          return JSON.parse(saved);
+          const parsed = JSON.parse(saved);
+          return { ...defaultSettings, ...parsed };
         }
       } catch (error) {
         console.error("Failed to parse settings:", error);
@@ -41,9 +46,8 @@ export default function Dashboard() {
   const [srtBlocks, setSrtBlocks] = useState<SubtitleBlock[]>([]);
   const [fileName, setFileName] = useState("");
   const [isTranslating, setIsTranslating] = useState(false);
-  const [progress, setProgress] = useState(0);
 
-  // 1. NextAuth Protection Logic
+  // NextAuth Protection Logic
   useEffect(() => {
     if (status === "unauthenticated") {
       router.replace("/login");
@@ -65,51 +69,99 @@ export default function Dashboard() {
     reader.readAsText(file);
   };
 
-  // Start Batch Translation Process
+  // State Calculations
+  const totalBlocks = srtBlocks.length;
+  const translatedCount = srtBlocks.filter((b) =>
+    b.translatedText?.trim(),
+  ).length;
+  const hasPartialTranslation =
+    translatedCount > 0 && translatedCount < totalBlocks;
+  const isFullyTranslated = totalBlocks > 0 && translatedCount === totalBlocks;
+
+  // 🎯 Smart Batch Translation Logic
   const handleStartTranslation = async () => {
-    if (!settings.apiKey)
-      return alert("Please enter your Gemini API Key first!");
-    if (srtBlocks.length === 0)
-      return alert("Please upload an SRT file first!");
-
-    setIsTranslating(true);
-    setProgress(0);
-
-    const total = srtBlocks.length;
-    const batchSize = settings.batchSize || 20;
-    const updatedBlocks = [...srtBlocks];
-
-    for (let i = 0; i < total; i += batchSize) {
-      const currentBatch = updatedBlocks.slice(i, i + batchSize);
-
-      try {
-        const translatedTexts = await translateBatchWithRetry(
-          currentBatch,
-          settings,
-        );
-
-        // Update block translations
-        translatedTexts.forEach((text, index) => {
-          if (updatedBlocks[i + index]) {
-            updatedBlocks[i + index].translatedText = text;
-          }
-        });
-
-        setSrtBlocks([...updatedBlocks]);
-        setProgress(Math.min(100, Math.round(((i + batchSize) / total) * 100)));
-      } catch (error) {
-        console.error("Batch error at line:", i, error);
-        toast.error("Translation Failed", {
-          description: `Error at block ${i + 1}: ${error instanceof Error ? error.message : "Service Unavailable"}`,
-        });
-        break;
-      }
+    if (!settings.apiKey) {
+      toast.error("API Key Missing", {
+        description: "Please enter your Gemini API Key in settings first.",
+      });
+      return;
+    }
+    if (totalBlocks === 0) {
+      toast.error("No Subtitles Loaded", {
+        description: "Please upload an SRT file first.",
+      });
+      return;
     }
 
-    setIsTranslating(false);
+    setIsTranslating(true);
+
+    try {
+      let updatedBlocks = [...srtBlocks];
+
+      // සියල්ලම Translate වී ඇත්නම් (Re-translate All), මුලින්ම clear කරගනී
+      if (isFullyTranslated) {
+        updatedBlocks = updatedBlocks.map((b) => ({
+          ...b,
+          translatedText: "",
+        }));
+        setSrtBlocks(updatedBlocks);
+      }
+
+      // 🔍 1. Translate වී නැති (Empty) Blocks වල Original Index ටික පමණක් ලබා ගැනීම
+      const untranslatedIndices = updatedBlocks
+        .map((block, idx) => (!block.translatedText?.trim() ? idx : -1))
+        .filter((idx) => idx !== -1);
+
+      const batchSize = settings.batchSize || 20;
+      const interBatchDelayMs = settings.interBatchDelay ?? 1500;
+
+      // 🚀 2. Translate නොවූ Blocks පමණක් Batch කර යැවීම
+      for (let i = 0; i < untranslatedIndices.length; i += batchSize) {
+        const currentBatchIndices = untranslatedIndices.slice(i, i + batchSize);
+        const currentBatchBlocks = currentBatchIndices.map(
+          (idx) => updatedBlocks[idx],
+        );
+
+        try {
+          const translatedTexts = await translateBatchWithRetry(
+            currentBatchBlocks,
+            settings,
+          );
+
+          // Translate වූ පෙළ නිවැරදි Block Index එකට සිතියම්ගත (Map) කිරීම
+          translatedTexts.forEach((text, index) => {
+            const targetIdx = currentBatchIndices[index];
+            if (updatedBlocks[targetIdx]) {
+              updatedBlocks[targetIdx].translatedText = text;
+            }
+          });
+
+          // State Update
+          setSrtBlocks([...updatedBlocks]);
+
+          // ⏱️ User Configured Inter-Batch Delay
+          if (i + batchSize < untranslatedIndices.length) {
+            await delay(interBatchDelayMs);
+          }
+        } catch (error) {
+          console.error("Batch error at indices:", currentBatchIndices, error);
+
+          const currentDone = updatedBlocks.filter((b) =>
+            b.translatedText?.trim(),
+          ).length;
+          toast.error("Translation Paused", {
+            description: `Stopped due to error. Saved ${currentDone}/${totalBlocks} blocks. Click 'Resume Translation' to continue.`,
+          });
+
+          break; // Stop loop on error
+        }
+      }
+    } finally {
+      // 🛑 3. සාර්ථක වුවත් නැතත් Button එකේ Loading State එක අනිවාර්යයෙන්ම Reset වේ
+      setIsTranslating(false);
+    }
   };
 
-  // Loading Screen
   if (status === "loading") {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-400">
@@ -121,10 +173,14 @@ export default function Dashboard() {
     );
   }
 
-  // Auth නැති නම් Redirect වෙන තෙක් Screen එක හිස්ව තැබීම
   if (status === "unauthenticated") {
     return null;
   }
+
+  const currentProgress =
+    totalBlocks > 0
+      ? Math.min(100, Math.round((translatedCount / totalBlocks) * 100))
+      : 0;
 
   return (
     <main className="min-h-screen bg-gray-950 text-gray-100 p-6 space-y-6 max-w-7xl mx-auto">
@@ -146,10 +202,10 @@ export default function Dashboard() {
       {/* Subtitle File Upload & Batch Config Section */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 shadow-lg space-y-4">
         <h2 className="text-lg font-semibold text-gray-100">
-          📂 SRT Subtitle Upload
+          📂 SRT Subtitle Upload & Controls
         </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
           {/* File Upload Input */}
           <div className="md:col-span-2">
             <label className="block text-xs font-medium text-gray-400 mb-1">
@@ -163,10 +219,10 @@ export default function Dashboard() {
             />
           </div>
 
-          {/* Batch Size / Blocks Control */}
+          {/* Batch Size Control */}
           <div>
             <label className="block text-xs font-medium text-gray-400 mb-1">
-              Blocks per Request (Batch Size)
+              Batch Size (Blocks/Req)
             </label>
             <input
               type="number"
@@ -182,36 +238,96 @@ export default function Dashboard() {
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none"
             />
           </div>
+
+          {/* ⏱️ Custom Inter-Batch Delay Control (Seconds) */}
+          <div>
+            <label className="block text-xs font-medium text-gray-400 mb-1">
+              Batch Delay (Seconds)
+            </label>
+            <input
+              type="number"
+              step={0.5}
+              min={0.5}
+              max={10}
+              value={(settings.interBatchDelay ?? 1500) / 1000}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  interBatchDelay: Math.max(
+                    500,
+                    parseFloat(e.target.value) * 1000 || 1500,
+                  ),
+                })
+              }
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none"
+            />
+          </div>
         </div>
 
-        {/* Translation Trigger Button */}
+        {/* Dynamic Translation Trigger Button & Stats */}
         <div className="pt-2 flex items-center justify-between">
           <span className="text-xs text-gray-400">
-            {srtBlocks.length > 0
-              ? `Loaded ${srtBlocks.length} subtitle blocks`
+            {totalBlocks > 0
+              ? `Loaded ${totalBlocks} blocks (${translatedCount}/${totalBlocks} translated)`
               : "No file uploaded"}
           </span>
 
           <button
             onClick={handleStartTranslation}
-            disabled={isTranslating || srtBlocks.length === 0}
-            className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-medium px-6 py-2 rounded-lg text-sm transition-all flex items-center gap-2 cursor-pointer"
+            disabled={isTranslating || totalBlocks === 0}
+            className={`font-medium px-6 py-2 rounded-lg text-sm transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+              isTranslating
+                ? "bg-gray-800 text-gray-400 border border-gray-700"
+                : hasPartialTranslation
+                  ? "bg-amber-600 hover:bg-amber-500 text-white shadow-lg shadow-amber-600/20"
+                  : isFullyTranslated
+                    ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20"
+                    : "bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-600/20"
+            }`}
           >
-            {isTranslating ? "Translating..." : "🚀 Start Translation"}
+            {isTranslating ? (
+              <>
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                <span>Translating... ({currentProgress}%)</span>
+              </>
+            ) : hasPartialTranslation ? (
+              <>
+                <span>⏯️</span>
+                <span>
+                  Resume Translation ({translatedCount}/{totalBlocks})
+                </span>
+              </>
+            ) : isFullyTranslated ? (
+              <>
+                <span>🔄</span>
+                <span>Re-translate All</span>
+              </>
+            ) : (
+              <>
+                <span>🚀</span>
+                <span>Start Translation</span>
+              </>
+            )}
           </button>
         </div>
 
         {/* Live Progress Bar */}
-        {isTranslating && (
+        {(isTranslating || translatedCount > 0) && (
           <div className="space-y-1 pt-2">
             <div className="flex justify-between text-xs text-gray-400">
               <span>Translation Progress</span>
-              <span>{progress}%</span>
+              <span>{currentProgress}%</span>
             </div>
             <div className="w-full bg-gray-800 rounded-full h-2 overflow-hidden">
               <div
-                className="bg-purple-500 h-2 transition-all duration-300"
-                style={{ width: `${progress}%` }}
+                className={`h-2 transition-all duration-300 ${
+                  hasPartialTranslation
+                    ? "bg-amber-500"
+                    : isFullyTranslated
+                      ? "bg-emerald-500"
+                      : "bg-purple-500"
+                }`}
+                style={{ width: `${currentProgress}%` }}
               />
             </div>
           </div>
@@ -219,7 +335,7 @@ export default function Dashboard() {
       </div>
 
       {/* Subtitle Inline Editor & Download Section */}
-      {srtBlocks.length > 0 && (
+      {totalBlocks > 0 && (
         <SubtitleEditor
           blocks={srtBlocks}
           onBlocksUpdate={setSrtBlocks}

@@ -95,9 +95,20 @@ export default function SettingsBar({ settings, onSaveSettings }: Props) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* API Key Input */}
         <div>
-          <label className="block text-xs font-medium text-gray-400 mb-1">
-            Google AI Studio API Key
-          </label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-xs font-medium text-gray-400">
+              Google AI Studio API Key
+            </label>
+            <a
+              href="https://aistudio.google.com/apikey"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-blue-400 hover:text-blue-300 hover:underline transition-colors flex items-center gap-0.5"
+            >
+              <span>Get key</span>
+              <span className="text-[10px]">↗</span>
+            </a>
+          </div>
           <input
             type="password"
             value={apiKey}

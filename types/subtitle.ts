@@ -11,5 +11,6 @@ export interface AppSettings {
   selectedModel: string;
   targetLanguage: string;
   batchSize: number; // Blocks count per request
+  interBatchDelay?: number; // Delay between batches in milliseconds (eg: 1500ms)
   contextPrompt?: string;
 }

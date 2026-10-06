@@ -28,10 +28,16 @@ export default function SubtitleEditor({
     const srtData = buildSRT(blocks);
     const blob = new Blob([srtData], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
+
+    const baseName = fileName ? fileName.replace(/\.srt$/i, "") : "subtitle";
+    const downloadName = `${baseName}_translated.srt`;
+
     const a = document.createElement("a");
     a.href = url;
-    a.download = `translated_${fileName || "subtitle.srt"}`;
+    a.download = downloadName;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 

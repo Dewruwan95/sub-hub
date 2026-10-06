@@ -4,29 +4,44 @@ async function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// 🧹 Non-Sinhala Scripts auto-remove Sanitizer function
+function sanitizeText(text: string, targetLanguage: string): string {
+  if (targetLanguage.toLowerCase() === "sinhala") {
+    return text
+      .replace(/[\u0900-\u097F]/g, "") // Remove Devanagari (Hindi)
+      .replace(/[\u0B80-\u0BFF]/g, "") // Remove Tamil
+      .replace(/[\u0D00-\u0D7F]/g, "") // Remove Malayalam
+      .replace(/[ ]+/g, " ") // Extra Spaces manage
+      .trim();
+  }
+  return text;
+}
+
 export async function translateBatchWithRetry(
   blocksBatch: SubtitleBlock[],
   settings: AppSettings,
   maxRetries = 3,
 ): Promise<string[]> {
-  // 1. Valid Model Name Check (Default to gemini-2.0-flash if missing/invalid)
+  // Better using standard gemini-2.0-flash insted of Lite model
   const selectedModel = settings.selectedModel || "gemini-2.0-flash";
+  const targetLang = settings.targetLanguage || "Sinhala";
 
   const promptText = `You are a professional movie subtitle translator.
-Target Language: ${settings.targetLanguage}
-${settings.contextPrompt ? `Context/Topic: ${settings.contextPrompt}` : ""}
 
-Instructions:
-1. Translate the following JSON array of subtitle texts into ${settings.targetLanguage}.
-2. Maintain natural spoken tone suitable for movie subtitles.
-3. Keep line breaks intact.
-4. Output MUST be ONLY a valid JSON array of translated strings matching the exact same order and length as input array.
+STRICT TRANSLATION RULES:
+1. Target Language: ${targetLang}
+2. Output ONLY in pure ${targetLang} script/language.
+3. DO NOT include any Tamil, Hindi, or Malayalam script or letters under any circumstances.
+4. Keep line breaks (\\n) intact.
+5. Output MUST be strictly a valid JSON array of strings matching the exact same length (${blocksBatch.length}) as the input array.
+
+${settings.contextPrompt ? `Context: ${settings.contextPrompt}` : ""}
 
 Input Array:
 ${JSON.stringify(blocksBatch.map((b) => b.originalText))}`;
 
   let attempt = 0;
-  let waitTime = 4000; // Start with 4 seconds
+  let waitTime = 4000;
 
   while (attempt < maxRetries) {
     try {
@@ -37,24 +52,19 @@ ${JSON.stringify(blocksBatch.map((b) => b.originalText))}`;
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [{ parts: [{ text: promptText }] }],
-            generationConfig: { responseMimeType: "application/json" },
+            generationConfig: {
+              responseMimeType: "application/json",
+              temperature: 0.2, // 👈 Hallucination අවම කිරීමට 0.2 සකසන ලදී
+            },
           }),
         },
       );
 
-      // Server Overload (503) or Rate Limit (429)
       if (res.status === 503 || res.status === 429) {
         attempt++;
-        const errorData = await res.json().catch(() => ({}));
-        console.warn(
-          `Server busy (${res.status}) on attempt ${attempt}. Message:`,
-          errorData?.error?.message || "No error details",
-        );
-
         if (attempt < maxRetries) {
-          console.warn(`Retrying in ${waitTime / 1000}s...`);
           await delay(waitTime);
-          waitTime *= 2; // Exponential Backoff
+          waitTime *= 2;
           continue;
         }
       }
@@ -73,14 +83,19 @@ ${JSON.stringify(blocksBatch.map((b) => b.originalText))}`;
         throw new Error("Empty response received from Gemini AI.");
       }
 
-      // Markdown Code block තිබුණොත් clean කිරීම
       rawText = rawText
         .replace(/```json/g, "")
         .replace(/```/g, "")
         .trim();
 
       const parsedTranslations: string[] = JSON.parse(rawText);
-      return parsedTranslations;
+
+      // 🧹 2. Text auto-sanitize and return
+      const cleanedTranslations = parsedTranslations.map((text) =>
+        sanitizeText(text, targetLang),
+      );
+
+      return cleanedTranslations;
     } catch (err) {
       if (attempt >= maxRetries - 1) throw err;
       attempt++;
@@ -88,7 +103,5 @@ ${JSON.stringify(blocksBatch.map((b) => b.originalText))}`;
     }
   }
 
-  throw new Error(
-    "Translation failed after multiple retries. Please verify your API Key and Model Name.",
-  );
+  throw new Error("Translation failed after multiple retries.");
 }
