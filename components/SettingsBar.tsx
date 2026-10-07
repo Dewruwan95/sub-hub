@@ -54,12 +54,22 @@ export default function SettingsBar({ settings, onSaveSettings }: Props) {
         if (data.models && data.models.length > 0) {
           setModels(data.models);
           // Set default model if current selection isn't in list
+          let newSelectedModel = selectedModel;
           if (
             !selectedModel ||
             !data.models.some((m: Model) => m.id === selectedModel)
           ) {
-            setSelectedModel(data.models[0].id);
+            const preferred = data.models.find((m: Model) => m.id === "gemini-3.5-flash-lite");
+            newSelectedModel = preferred ? preferred.id : data.models[0].id;
+            setSelectedModel(newSelectedModel);
           }
+          // Auto-save the fetched state to the parent so it's in sync!
+          onSaveSettings({
+            ...settings,
+            apiKey,
+            selectedModel: newSelectedModel,
+            targetLanguage,
+          });
         }
       } catch (err) {
         console.error("Failed to load models", err);
@@ -113,6 +123,7 @@ export default function SettingsBar({ settings, onSaveSettings }: Props) {
             type="password"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
+            onBlur={() => onSaveSettings({ ...settings, apiKey, selectedModel, targetLanguage })}
             placeholder="Paste Gemini API Key..."
             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500"
           />
@@ -125,7 +136,10 @@ export default function SettingsBar({ settings, onSaveSettings }: Props) {
           </label>
           <select
             value={selectedModel}
-            onChange={(e) => setSelectedModel(e.target.value)}
+            onChange={(e) => {
+              setSelectedModel(e.target.value);
+              onSaveSettings({ ...settings, apiKey, selectedModel: e.target.value, targetLanguage });
+            }}
             disabled={models.length === 0}
             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500 disabled:opacity-50"
           >
@@ -148,7 +162,10 @@ export default function SettingsBar({ settings, onSaveSettings }: Props) {
           </label>
           <select
             value={targetLanguage}
-            onChange={(e) => setTargetLanguage(e.target.value)}
+            onChange={(e) => {
+              setTargetLanguage(e.target.value);
+              onSaveSettings({ ...settings, apiKey, selectedModel, targetLanguage: e.target.value });
+            }}
             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500"
           >
             {LANGUAGES.map((lang) => (
@@ -166,11 +183,11 @@ export default function SettingsBar({ settings, onSaveSettings }: Props) {
           onClick={handleSaveLocally}
           className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-2 rounded-lg text-sm transition-all flex items-center gap-2"
         >
-          💾 Save Locally
+          💾 Save Configuration
         </button>
         {savedStatus && (
           <span className="text-green-400 text-xs self-center ml-3 animate-pulse">
-            Saved to LocalStorage!
+            Saved!
           </span>
         )}
       </div>

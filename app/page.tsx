@@ -43,6 +43,13 @@ export default function Dashboard() {
     return defaultSettings;
   });
 
+  // Auto-save settings on change
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("subhub_settings", JSON.stringify(settings));
+    }
+  }, [settings]);
+
   const [srtBlocks, setSrtBlocks] = useState<SubtitleBlock[]>([]);
   const [fileName, setFileName] = useState("");
   const [isTranslating, setIsTranslating] = useState(false);
@@ -122,10 +129,18 @@ export default function Dashboard() {
           (idx) => updatedBlocks[idx],
         );
 
+        // Send previous 5 blocks for context continuity
+        const firstIdxInBatch = currentBatchIndices[0];
+        const prevContextBlocks = updatedBlocks.slice(
+          Math.max(0, firstIdxInBatch - 5),
+          firstIdxInBatch
+        );
+
         try {
           const translatedTexts = await translateBatchWithRetry(
             currentBatchBlocks,
             settings,
+            prevContextBlocks
           );
 
           // Translate වූ පෙළ නිවැරදි Block Index එකට සිතියම්ගත (Map) කිරීම
@@ -150,7 +165,7 @@ export default function Dashboard() {
             b.translatedText?.trim(),
           ).length;
           toast.error("Translation Paused", {
-            description: `Stopped due to error. Saved ${currentDone}/${totalBlocks} blocks. Click 'Resume Translation' to continue.`,
+            description: `Error: ${error instanceof Error ? error.message : "Unknown error"}. Saved ${currentDone}/${totalBlocks} blocks.`,
           });
 
           break; // Stop loop on error
